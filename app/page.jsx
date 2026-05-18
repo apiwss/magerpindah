@@ -1,3 +1,4 @@
+"use client";
 import { useState, useEffect, useRef } from "react";
 
 /* ── CSS-IN-JS VARIABLES (injected once) ── */
