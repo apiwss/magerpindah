@@ -1,3 +1,4 @@
+"use client";
 import { useState, useEffect, useRef } from "react";
 
 /* ─────────────────────────────────────────────
@@ -144,11 +145,11 @@ const DEMO_USERS = [
   { email: 'admin@demo.com', pass: 'demo123', name: 'Admin MagerPindah', role: 'admin', phone: '+62812-0003' },
 ];
 
+// Laporan hanya ada di dashboard admin, TIDAK di navbar publik
 const navItems = [
   { page: 'home', label: 'Beranda' },
   { page: 'booking', label: 'Pesan' },
   { page: 'tracking', label: 'Tracking' },
-  { page: 'report', label: 'Laporan' },
   { page: 'about', label: 'Tentang' },
 ];
 
@@ -599,11 +600,12 @@ function AuthPage({ mode, navigate, onLogin }) {
 /* ─────────────────────────────────────────────
    BOOKING PAGE
 ───────────────────────────────────────────── */
-function BookingPage({ bookingStep, setBookingStep, bookingForm, setBookingForm, bookingDone, setBookingDone, navigate }) {
+function BookingPage({ bookingStep, setBookingStep, bookingForm, setBookingForm, bookingDone, setBookingDone, navigate, user, addTransaction }) {
   const f = bookingForm;
   const step = bookingStep;
   const steps = ['Lokasi & Waktu', 'Layanan & Barang', 'Konfirmasi'];
   const [newItem, setNewItem] = useState('');
+  const [lastOrderId, setLastOrderId] = useState('');
 
   function saveAndNext() {
     const from = document.getElementById('bf_from')?.value;
@@ -638,7 +640,7 @@ function BookingPage({ bookingStep, setBookingStep, bookingForm, setBookingForm,
         <div style={{textAlign:'center',maxWidth:440}}>
           <div style={{width:80,height:80,borderRadius:'50%',background:'rgba(62,207,160,.15)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 22px',color:'var(--ok)'}} dangerouslySetInnerHTML={{__html:iconSz('chk',42,'#3ECFA0')}}></div>
           <h2 className="sora" style={{fontSize:'clamp(22px,3vw,28px)',fontWeight:700,marginBottom:10}}>Order Berhasil!</h2>
-          <p style={{color:'var(--tx2)',marginBottom:8}}>ID Order: <strong style={{color:'var(--acc)'}}>#{`MPD-${Math.floor(Math.random()*9000)+1000}`}</strong></p>
+          <p style={{color:'var(--tx2)',marginBottom:8}}>ID Order: <strong style={{color:'var(--acc)'}}>#{lastOrderId}</strong></p>
           <p style={{color:'var(--tx2)',marginBottom:32,lineHeight:1.7}}>Driver sedang konfirmasi. Kamu akan dapat notifikasi segera.</p>
           <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
             <button className="btn-p" onClick={() => navigate('tracking')}>Lacak Order</button>
@@ -785,7 +787,29 @@ function BookingPage({ bookingStep, setBookingStep, bookingForm, setBookingForm,
             {step>1 ? <button className="btn-g" onClick={() => { saveAndNext(); setBookingStep(s=>s-1); }}>← Kembali</button> : <div></div>}
             {step<3
               ? <button className="btn-p" onClick={() => { saveAndNext(); setBookingStep(s=>s+1); }}>Lanjut →</button>
-              : <button className="btn-p" style={{padding:'12px 28px'}} onClick={() => setBookingDone(true)}>✓ Buat Order</button>}
+              : <button className="btn-p" style={{padding:'12px 28px'}} onClick={() => {
+                  // PUSH KE DATABASE — data otomatis masuk ke laporan admin
+                  const orderId = `MPD-${Math.floor(Math.random()*9000)+1000}`;
+                  const svcLabel = f.service==='lite'?'Lite':f.service==='regular'?'Regular':'Full';
+                  const rawPrice = f.service==='lite'?65000:f.service==='regular'?145000:210000;
+                  const priceFormatted = `Rp${rawPrice.toLocaleString('id-ID')}`;
+                  const now = new Date();
+                  const dateStr = now.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'});
+                  addTransaction({
+                    id: orderId,
+                    user: user?.name || 'Guest',
+                    svc: svcLabel,
+                    driver: '—',
+                    status: 'Menunggu',
+                    price: priceFormatted,
+                    rawPrice: rawPrice,
+                    from: f.from || 'Belum diisi',
+                    to: f.to || 'Belum diisi',
+                    date: dateStr,
+                  });
+                  setLastOrderId(orderId);
+                  setBookingDone(true);
+                }}>✓ Buat Order</button>}
           </div>
         </div>
       </div>
@@ -915,9 +939,10 @@ function TrackingPage({ trackStatus, setTrackStatus, chatMsgs, setChatMsgs }) {
 }
 
 /* ─────────────────────────────────────────────
-   REPORT PAGE
+   REPORT PAGE — HANYA UNTUK ADMIN
+   txns = database transaksi dari state global
 ───────────────────────────────────────────── */
-function ReportPage() {
+function ReportPage({ transactions = [] }) {
   const monthly = [
     {m:'Jul',orders:142,rev:18240000},{m:'Agu',orders:178,rev:22890000},
     {m:'Sep',orders:195,rev:25100000},{m:'Okt',orders:221,rev:28400000},
@@ -925,7 +950,8 @@ function ReportPage() {
     {m:'Jan',orders:284,rev:36500000},
   ];
   const maxRev = Math.max(...monthly.map(m => m.rev));
-  const txns = [
+  // Gabungkan seed data + transaksi baru dari database (booking customer)
+  const seedTxns = [
     {id:'MPD-2847',user:'Rizki Amalia',svc:'Regular',driver:'Budi S.',status:'Selesai',price:'Rp145.000'},
     {id:'MPD-2846',user:'Bima Prakoso',svc:'Lite',driver:'Dedi W.',status:'Selesai',price:'Rp65.000'},
     {id:'MPD-2845',user:'Sari Dewi',svc:'Full',driver:'Andi P.',status:'Selesai',price:'Rp210.000'},
@@ -933,6 +959,12 @@ function ReportPage() {
     {id:'MPD-2843',user:'Maya Putri',svc:'Full',driver:'Budi S.',status:'Selesai',price:'Rp185.000'},
     {id:'MPD-2842',user:'Fajar Nugraha',svc:'Lite',driver:'Dedi W.',status:'Selesai',price:'Rp55.000'},
   ];
+  // Transaksi dari database (booking baru) ditampilkan di atas
+  const txns = [...transactions, ...seedTxns];
+  // Hitung ulang analytics berdasarkan data real
+  const totalTxn = (1598 + transactions.length).toLocaleString('id-ID');
+  const newRev = transactions.reduce((s, t) => s + (t.rawPrice || 0), 0);
+  const totalRev = newRev > 0 ? `Rp${((204900000 + newRev) / 1e6).toFixed(1)}jt` : 'Rp204.9jt';
 
   return (
     <div className="section">
@@ -949,8 +981,8 @@ function ReportPage() {
         {/* ANALYTICS CARDS */}
         <div className="g4" style={{marginBottom:28}}>
           {[
-            {label:'Total Transaksi',val:'1.598',ch:'+18%',c:'var(--acc)'},
-            {label:'Total Pendapatan',val:'Rp204.9jt',ch:'+22%',c:'var(--ok)'},
+            {label:'Total Transaksi',val:totalTxn,ch:`+${transactions.length > 0 ? transactions.length + ' baru' : '18%'}`,c:'var(--acc)'},
+            {label:'Total Pendapatan',val:totalRev,ch:'+22%',c:'var(--ok)'},
             {label:'Total Customer',val:'1.024',ch:'+130',c:'var(--warn)'},
             {label:'Total Driver',val:'23',ch:'+5',c:'var(--acc2)'},
           ].map(s => (
@@ -1011,9 +1043,12 @@ function ReportPage() {
             <table className="tbl">
               <thead><tr>{['Order ID','Customer','Layanan','Driver','Status','Total'].map(h=><th key={h}>{h}</th>)}</tr></thead>
               <tbody>
-                {txns.map(o => (
-                  <tr key={o.id}>
-                    <td style={{color:'var(--acc)',fontWeight:600}}>{o.id}</td>
+                {txns.map((o,idx) => (
+                  <tr key={o.id} style={idx < transactions.length ? {background:'rgba(62,207,160,.04)'} : {}}>
+                    <td style={{color:'var(--acc)',fontWeight:600}}>
+                      {o.id}
+                      {idx < transactions.length && <span style={{marginLeft:6,fontSize:9,background:'rgba(62,207,160,.2)',color:'var(--ok)',padding:'2px 6px',borderRadius:99,fontWeight:700,verticalAlign:'middle'}}>BARU</span>}
+                    </td>
                     <td>{o.user}</td>
                     <td style={{color:'var(--tx2)'}}>{o.svc}</td>
                     <td>{o.driver}</td>
@@ -1025,7 +1060,7 @@ function ReportPage() {
             </table>
           </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16,fontSize:13,color:'var(--tx2)',flexWrap:'wrap',gap:12}}>
-            <span>Menampilkan {txns.length} dari 1.598 transaksi</span>
+            <span>Menampilkan {txns.length} dari {(1598 + transactions.length).toLocaleString('id-ID')} transaksi</span>
             <div style={{display:'flex',gap:6}}>
               {[1,2,3,'...',159].map((p,i) => (
                 <button key={i} style={{width:30,height:30,borderRadius:7,border:'1px solid var(--bd)',background:p===1?'var(--acc)':'transparent',color:p===1?'white':'var(--tx2)',cursor:'pointer',fontSize:13,fontFamily:'inherit'}}>{p}</button>
@@ -1041,14 +1076,21 @@ function ReportPage() {
 /* ─────────────────────────────────────────────
    ADMIN DASHBOARD
 ───────────────────────────────────────────── */
-function AdminPage({ user, adminTab, setAdminTab, logout }) {
-  const orders = [
+function AdminPage({ user, adminTab, setAdminTab, logout, transactions }) {
+  const seedOrders = [
     {id:'MPD-2847',user:'Rizki Amalia',from:'Jatinangor',to:'Dipatiukur',status:'Aktif',price:'Rp145.000',driver:'Budi S.'},
     {id:'MPD-2846',user:'Bima Prakoso',from:'Sekeloa',to:'Tubagus',status:'Selesai',price:'Rp95.000',driver:'Dedi W.'},
     {id:'MPD-2845',user:'Sari Dewi',from:'Cisitu',to:'Geger Kalong',status:'Selesai',price:'Rp210.000',driver:'Andi P.'},
     {id:'MPD-2844',user:'Dika Ramadhan',from:'Dago',to:'Antapani',status:'Batal',price:'Rp0',driver:'—'},
     {id:'MPD-2843',user:'Maya Putri',from:'Lembang',to:'Hegarmanah',status:'Selesai',price:'Rp185.000',driver:'Budi S.'},
   ];
+  // Gabungkan transaksi baru dari database + seed data
+  const newOrders = transactions.map(t => ({
+    id: t.id, user: t.user, from: t.from, to: t.to,
+    status: t.status, price: t.price, driver: t.driver || '—'
+  }));
+  const orders = [...newOrders, ...seedOrders];
+  const totalOrderCount = (1284 + transactions.length).toLocaleString('id-ID');
   const drivers = [
     {name:'Budi Santoso',veh:'Pickup Bak',trips:142,earn:'Rp4.2jt',status:'Online',rating:'4.9'},
     {name:'Dedi Wahyu',veh:'Motor Box',trips:98,earn:'Rp3.8jt',status:'Online',rating:'4.8'},
@@ -1096,7 +1138,7 @@ function AdminPage({ user, adminTab, setAdminTab, logout }) {
             <>
               <div className="g4" style={{marginBottom:22}}>
                 {[
-                  {label:'Total Order',val:'1.284',ch:'+12%',c:'var(--acc)'},
+                  {label:'Total Order',val:totalOrderCount,ch:transactions.length>0?`+${transactions.length} baru`:'+12%',c:'var(--acc)'},
                   {label:'Pendapatan',val:'Rp48.2jt',ch:'+8.3%',c:'var(--ok)'},
                   {label:'Driver Aktif',val:'23',ch:'+3',c:'var(--warn)'},
                   {label:'Rating Avg',val:'4.87 ⭐',ch:'+0.02',c:'var(--acc2)'},
@@ -1147,14 +1189,20 @@ function AdminPage({ user, adminTab, setAdminTab, logout }) {
           {tab==='orders' && (
             <div className="card card-p">
               <div style={{display:'flex',justifyContent:'space-between',marginBottom:18,flexWrap:'wrap',gap:12}}>
-                <span style={{fontSize:14,color:'var(--tx2)'}}>Total: 1.284 order</span>
+                <span style={{fontSize:14,color:'var(--tx2)'}}>Total: {totalOrderCount} order</span>
                 <div style={{display:'flex',gap:8}}><input className="inp" style={{width:160,padding:'8px 12px',fontSize:13}} placeholder="Cari..."/><button className="btn-g btn-sm">Filter</button></div>
               </div>
               <div style={{overflowX:'auto'}}>
                 <table className="tbl">
                   <thead><tr>{['ID','Customer','Rute','Driver','Status','Total','Aksi'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-                  <tbody>{orders.map(o=>(
-                    <tr key={o.id}><td style={{color:'var(--acc)',fontWeight:600}}>{o.id}</td><td>{o.user}</td><td style={{color:'var(--tx2)'}}>{o.from}→{o.to}</td><td>{o.driver}</td><td><span className={sColor(o.status)}>{o.status}</span></td><td style={{fontWeight:600}}>{o.price}</td><td><button className="btn-g btn-sm">Detail</button></td></tr>
+                  <tbody>{orders.map((o,idx)=>(
+                    <tr key={o.id} style={idx < newOrders.length ? {background:'rgba(62,207,160,.04)'} : {}}>
+                      <td style={{color:'var(--acc)',fontWeight:600}}>
+                        {o.id}
+                        {idx < newOrders.length && <span style={{marginLeft:6,fontSize:9,background:'rgba(62,207,160,.2)',color:'var(--ok)',padding:'2px 6px',borderRadius:99,fontWeight:700,verticalAlign:'middle'}}>BARU</span>}
+                      </td>
+                      <td>{o.user}</td><td style={{color:'var(--tx2)'}}>{o.from}→{o.to}</td><td>{o.driver}</td><td><span className={sColor(o.status)}>{o.status}</span></td><td style={{fontWeight:600}}>{o.price}</td><td><button className="btn-g btn-sm">Detail</button></td>
+                    </tr>
                   ))}</tbody>
                 </table>
               </div>
@@ -1213,7 +1261,7 @@ function AdminPage({ user, adminTab, setAdminTab, logout }) {
             </div>
           )}
 
-          {tab==='report' && <ReportPage />}
+          {tab==='report' && <ReportPage transactions={transactions} />}
         </div>
       </div>
     </div>
@@ -1501,6 +1549,9 @@ export default function App() {
   const [adminTab, setAdminTab] = useState('overview');
   const [driverTab, setDriverTab] = useState('orders');
   const [customerTab, setCustomerTab] = useState('home');
+  // DATABASE TRANSAKSI — terisi otomatis saat customer booking/order selesai
+  // Hanya admin yang bisa melihat di dashboard → tab Laporan
+  const [transactions, setTransactions] = useState([]);
 
   // Inject CSS once
   useEffect(() => {
@@ -1534,18 +1585,23 @@ export default function App() {
     setDrawerOpen(o => !o);
   }
 
+  // Fungsi push ke database transaksi (dipanggil saat booking selesai)
+  function addTransaction(orderData) {
+    setTransactions(prev => [orderData, ...prev]);
+  }
+
   function renderPage() {
     switch (page) {
       case 'home': return <HomePage priceSliders={priceSliders} setPriceSliders={setPriceSliders} activeTesti={activeTesti} setActiveTesti={setActiveTesti} navigate={navigate} />;
       case 'login': return <AuthPage mode="login" navigate={navigate} onLogin={setUser} />;
       case 'register': return <AuthPage mode="register" navigate={navigate} onLogin={setUser} />;
-      case 'booking': return <BookingPage bookingStep={bookingStep} setBookingStep={setBookingStep} bookingForm={bookingForm} setBookingForm={setBookingForm} bookingDone={bookingDone} setBookingDone={setBookingDone} navigate={navigate} />;
+      case 'booking': return <BookingPage bookingStep={bookingStep} setBookingStep={setBookingStep} bookingForm={bookingForm} setBookingForm={setBookingForm} bookingDone={bookingDone} setBookingDone={setBookingDone} navigate={navigate} user={user} addTransaction={addTransaction} />;
       case 'tracking': return <TrackingPage trackStatus={trackStatus} setTrackStatus={setTrackStatus} chatMsgs={chatMsgs} setChatMsgs={setChatMsgs} />;
-      case 'report': return <ReportPage />;
-      case 'admin': return <AdminPage user={user} adminTab={adminTab} setAdminTab={setAdminTab} logout={logout} />;
+      case 'admin': return <AdminPage user={user} adminTab={adminTab} setAdminTab={setAdminTab} logout={logout} transactions={transactions} />;
       case 'driver': return <DriverPage user={user} driverTab={driverTab} setDriverTab={setDriverTab} />;
       case 'customer': return <CustomerPage user={user} customerTab={customerTab} setCustomerTab={setCustomerTab} navigate={navigate} />;
       case 'about': return <AboutPage navigate={navigate} />;
+      // 'report' tidak ada sebagai route publik — hanya bisa diakses via admin dashboard
       default: return <HomePage priceSliders={priceSliders} setPriceSliders={setPriceSliders} activeTesti={activeTesti} setActiveTesti={setActiveTesti} navigate={navigate} />;
     }
   }
